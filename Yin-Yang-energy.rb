@@ -6,11 +6,12 @@
 #~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~
                             Автор:  Doctor Bug
                             Для:    RPGMAKER VX ACE 
-                            Версия: 0.3
+                            Версия: 0.5
 #~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~
                         :...~o[ История версий ]o~...:
 #~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~
-
+    2019-05-28 -> Версия 0.5
+               - Добавлены две команды: <give_away: id> и <give_away_all>
     2019-05-26 -> Версия 0.4
                - По фиксен Баг
     2018-09-19 -> Версия 0.3
@@ -43,9 +44,12 @@
     <transfer_state: id>  # ~~o передает состояние кому-либо. Можно использовать
                                 в паре. Нужно указать номер (id) состояния.
     <transfer_states>     # ~~o передает все состояние кому либо.
-    <take_state: id>      # ~~o забирает себе конкретное состояние кого-либо.
+    <take_state: id>      # ~~o забирает себе конкретное состояние с цели.
                                         Нужно указать номер (id) состояния.
-    <take_states>         # ~~o забирает себе все состояние кого-либо.                                  
+    <take_states>         # ~~o забирает себе все состояние кого-либо.
+    <give_away: id>       # ~~o отдает конкретное состояние цели.
+                                        Нужно указать номер (id) состояния.
+    <give_away_all>       # ~~o отдает все состояние кого-либо.
     
     Работает только в области действия союзника. Пока что.
         
@@ -58,7 +62,7 @@
 =end
 
 class RPG::BaseItem
-
+  
   def delete_state
     if @delete_state.nil?
       if @note =~ /<delete_state:[ ](.*)>/i
@@ -115,6 +119,37 @@ class RPG::BaseItem
       return false
     end
   end
+  
+  def give_away
+    if @give_away.nil?
+      if @note =~ /<give_away:[ ](.*)>/i
+        @give_away = $1.to_i
+      else
+        @give_away = 0
+      end
+    end
+    @give_away    
+  end
+  
+  def give_away_all
+    if @note =~ /<give_away_all>/i
+      return true
+    else
+      return false
+    end
+  end
+  
+  def states_cobmo
+    if @states_cobmo.nil?
+      if @note =~ /<activate: (.*) if states_combo: (.*)>/i
+        @arr_states = $2.to_s.split(" ").map {|i| i.to_i}
+        @states_cobmo = [$1.to_i, @arr_states.sort]
+      else
+        @states_cobmo = []
+      end
+    end
+    @states_cobmo
+  end
     
 end # RPG::Item
 
@@ -149,6 +184,9 @@ class Scene_Battle < Scene_Base
         end
         process_casting_animation if $imported["YEA-CastAnimations"]
         targets = @subject.current_action.make_targets.compact rescue []
+        #targets.each {|target|
+        #  puts "target #{target.name}"
+        #}
         manipulation_of_energy_Jin(item,targets)
         show_animation(targets, item.animation_id) if show_all_animation?(item)
         targets.each {|target| 
@@ -180,6 +218,7 @@ class Scene_Battle < Scene_Base
   def manipulation_of_energy_Jin(item,targets)
     check_states(item,targets)
     take_states(item,targets)
+    combo_states(item, targets)
   end
   
   def check_states(item,targets)
@@ -187,20 +226,38 @@ class Scene_Battle < Scene_Base
       #puts "state #{state.id}"
       bring_states(item,state)
       targets.each do |target|
+        give_away(item,target,state)
         transfer_states(item,target,state)
       end
     end
   end
   
-  #~~o~~o Передача состояния или передача всех сосотяний
+  # Удалить состояние
+  def bring_states(item,state)
+    @subject.erase_state(state.id) if item.delete_states
+    @subject.erase_state(state.id) if @subject.state?(item.delete_state)
+  end
+  
+  #~~o~~o Делиться состояния или передача всех сосотяний. 
+  #~~o~~o Исходное состояние остается
   def transfer_states(item,target,state)
-    @subject.states.each do |state|
-      if @subject.state?(item.transfer_state)
-        target.add_state(item.transfer_state)
-      end
-      if item.transfer_states
-        target.add_state(state.id)
-      end
+    if @subject.state?(item.transfer_state)
+      target.add_state(item.transfer_state)
+    end
+    if item.transfer_states
+      target.add_state(state.id)
+    end
+  end
+  
+  #~~o~~o Отдаёт состояния или отдаёт все сосотяние. 
+  def give_away(item,target,state)
+    if @subject.state?(item.give_away)
+      @subject.erase_state(item.give_away)
+      target.add_state(item.give_away)
+    end
+    if item.give_away_all
+      @subject.erase_state(state.id)
+      target.add_state(state.id)
     end
   end
   
@@ -220,8 +277,27 @@ class Scene_Battle < Scene_Base
     end
   end
   
-  def bring_states(item,state)
-    @subject.erase_state(state.id) if item.delete_states
-    @subject.erase_state(state.id) if @subject.state?(item.delete_state)
+  #~~o~~o Проверка на комбинацию состояний противника
+  def combo_states(item, targets)
+    @list_state = []
+    # Собираем массив из id состояний цели в массив @list_state
+    targets.each do |target|
+      target.states.map{ |state| @list_state.push(state.id)}
+      target.states.each { |state| 
+        puts "target #{target.name}, state #{state.id}"
+      }
+    end
+    # Узнаем "комбинацию состояний" с навыка, если есть
+    combo = item.states_cobmo[1]
+    # Пересечений массивов
+    @temp_combo_skill = combo & @list_state
+    if @temp_combo_skill == combo
+      @temp_combo_skill.each {|state|
+        targets.each do |target|
+          target.erase_state(state)
+        end
+      }
+    end    
   end
+  
 end
