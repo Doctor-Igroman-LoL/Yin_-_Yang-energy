@@ -10,6 +10,10 @@
 #~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~
                         :...~o[ История версий ]o~...:
 #~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~
+    2019-05-30 -> Версия 0.6
+               - Добавлена комбо-скилл-состояний. Активирует указаный скилл, 
+                при условии, если на цели будут наложены соответствующие
+                состояния. <activate: id if states_combo: stata_id stata_id>
     2019-05-28 -> Версия 0.5
                - Добавлены две команды: <give_away: id> и <give_away_all>
     2019-05-26 -> Версия 0.4
@@ -51,7 +55,11 @@
                                         Нужно указать номер (id) состояния.
     <give_away_all>       # ~~o отдает все состояние кого-либо.
     
-    Работает только в области действия союзника. Пока что.
+    <activate: id if states_combo: stata_id stata_id>
+    #~~o Добавлена комбо-скилл-состояний. Активирует указаный скилл, 
+    при условии, если на цели будут наложены соответствующие состояния.
+    id - навык который нужно активировать
+    stata_id - id состояний которые должны быть у цели, для выполнения условии. 
         
 #~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~o~~~
                           :...~o[ Требование ]o~...:
@@ -215,10 +223,23 @@ class Scene_Battle < Scene_Base
     end  
   end
   
+  #--------------------------------------------------------------------------
+  # alias method: invoke_item
+  #--------------------------------------------------------------------------
+  alias scene_battle_invoke_item_drbug invoke_item
+  def invoke_item(target, item)
+    if target.dead? != item.for_dead_friend?
+      @subject.last_target_index = target.index
+      return
+    end
+    combo_states(target, item)
+    scene_battle_invoke_item_drbug(target, item)
+  end
+  
   def manipulation_of_energy_Jin(item,targets)
     check_states(item,targets)
     take_states(item,targets)
-    combo_states(item, targets)
+    #combo_states(item, targets)
   end
   
   def check_states(item,targets)
@@ -278,25 +299,22 @@ class Scene_Battle < Scene_Base
   end
   
   #~~o~~o Проверка на комбинацию состояний противника
-  def combo_states(item, targets)
+  def combo_states(target, item)
     @list_state = []
     # Собираем массив из id состояний цели в массив @list_state
-    targets.each do |target|
-      target.states.map{ |state| @list_state.push(state.id)}
-      target.states.each { |state| 
-        puts "target #{target.name}, state #{state.id}"
-      }
-    end
+    target.states.map{ |state| @list_state.push(state.id)}
     # Узнаем "комбинацию состояний" с навыка, если есть
     combo = item.states_cobmo[1]
     # Пересечений массивов
     @temp_combo_skill = combo & @list_state
     if @temp_combo_skill == combo
       @temp_combo_skill.each {|state|
-        targets.each do |target|
-          target.erase_state(state)
-        end
+        target.erase_state(state)
       }
+      attack_skill = $data_skills[item.states_cobmo[0]]
+      target.item_apply(target, attack_skill) 
+      refresh_status
+      @log_window.display_action_results(target, attack_skill)
     end    
   end
   
