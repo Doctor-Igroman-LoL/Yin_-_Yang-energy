@@ -190,6 +190,47 @@
     @subject.last_target_index = target.index
   end
 
+++++++++++++++++++++++++++++++ Game_Battler +++++++++++++++++++++++++++++++++
+  #--------------------------------------------------------------------------
+  # * Calculate Counterattack Rate for Skill/Item
+  #--------------------------------------------------------------------------
+  def item_cnt(user, item)
+    return 0 unless item.physical?          # Hit type is not physical
+    return 0 unless opposite?(user)         # No counterattack on allies
+    return cnt                              # Return counterattack rate
+  end
+
+  #--------------------------------------------------------------------------
+  # * Calculate Reflection Rate of Skill/Item
+  #--------------------------------------------------------------------------
+  def item_mrf(user, item)
+    return mrf if item.magical?     # Return magic reflection if magic attack
+    return 0
+  end
+
+  #--------------------------------------------------------------------------
+  # * Determine if Hostile Relation
+  #--------------------------------------------------------------------------
+  def opposite?(battler)
+    actor? != battler.actor? || battler.magic_reflection
+  end
+
+  #--------------------------------------------------------------------------
+  # * Determine if Actor or Not
+  #--------------------------------------------------------------------------
+  def actor?
+    return false
+  end
+  ++++++++++++++++++++++++++++++ Game_Actor +++++++++++++++++++++++++++++++++++
+  #--------------------------------------------------------------------------
+  # * Determine if Actor or Not
+  #--------------------------------------------------------------------------
+  def actor?
+    return true
+  end
+  +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
   #--------------------------------------------------------------------------
   # * Invoke Counterattack
   #--------------------------------------------------------------------------
@@ -218,6 +259,20 @@
     target.item_apply(@subject, item)
     refresh_status
     @log_window.display_action_results(target, item)
+  end
+
+  #--------------------------------------------------------------------------
+  # * Apply Substitute
+  #--------------------------------------------------------------------------
+  def apply_substitute(target, item)
+    if check_substitute(target, item)
+      substitute = target.friends_unit.substitute_battler
+      if substitute && target != substitute
+        @log_window.display_substitute(substitute, target)
+        return substitute
+      end
+    end
+    target
   end
 
 ---------------
